@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="ufoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#3B82F6"/>
+      <stop offset="100%" style="stop-color:#8B5CF6"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- UFO Body -->
+  <ellipse cx="50" cy="50" rx="40" ry="15" fill="url(#ufoGradient)" filter="url(#glow)"/>
+  
+  <!-- UFO Dome -->
+  <ellipse cx="50" cy="42" rx="20" ry="12" fill="#06B6D4" fill-opacity="0.6"/>
+  
+  <!-- Lights -->
+  <circle cx="20" cy="50" r="3" fill="#10B981" filter="url(#glow)"/>
+  <circle cx="35" cy="55" r="3" fill="#10B981" filter="url(#glow)"/>
+  <circle cx="50" cy="57" r="3" fill="#10B981" filter="url(#glow)"/>
+  <circle cx="65" cy="55" r="3" fill="#10B981" filter="url(#glow)"/>
+  <circle cx="80" cy="50" r="3" fill="#10B981" filter="url(#glow)"/>
+  
+  <!-- Beam -->
+  <path d="M30 60 L25 90 L75 90 L70 60" fill="url(#ufoGradient)" fill-opacity="0.2"/>
+</svg>
