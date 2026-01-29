@@ -1,0 +1,62 @@
+# UFO Galaxy v5.0 - Python Dependencies
+
+# Web Framework
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+websockets>=12.0
+python-multipart>=0.0.6
+
+# Data Validation
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+
+# HTTP Client
+aiohttp>=3.9.0
+httpx>=0.25.0
+requests>=2.31.0
+
+# Database
+sqlalchemy>=2.0.0
+asyncpg>=0.29.0
+redis>=5.0.0
+
+# Machine Learning & AI
+numpy>=1.26.0
+scipy>=1.11.0
+scikit-learn>=1.3.0
+networkx>=3.2.0
+
+# Search Integration
+googlesearch-python>=1.2.3
+arxiv>=2.1.0
+PyGithub>=2.1.0
+
+# MQTT & IoT
+paho-mqtt>=1.6.0
+
+# Android ADB
+pure-python-adb>=0.3.0.dev0
+
+# Security
+cryptography>=41.0.0
+PyJWT>=2.8.0
+bcrypt>=4.1.0
+
+# Monitoring
+prometheus-client>=0.19.0
+
+# Logging
+loguru>=0.7.0
+
+# Utilities
+python-dotenv>=1.0.0
+pyyaml>=6.0.1
+click>=8.1.0
+rich>=13.7.0
+tenacity>=8.2.0
+
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+httpx>=0.25.0
