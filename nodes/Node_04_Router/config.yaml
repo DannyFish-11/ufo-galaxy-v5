@@ -1,0 +1,75 @@
+# Node 04 - Router Configuration
+# UFO Galaxy v5.0 Core Node System
+
+node:
+  id: "04"
+  name: "Router"
+  description: "Request Routing for UFO Galaxy v5.0"
+  version: "5.0.0"
+  
+server:
+  host: "0.0.0.0"
+  port: 8004
+  workers: 4
+  reload: false
+  
+logging:
+  level: "INFO"
+  file: "router.log"
+  rotation: "10 MB"
+  retention: "7 days"
+  
+routing:
+  default_strategy: "round_robin"
+  health_check_interval: 30
+  health_check_timeout: 5
+  max_failures: 3
+  
+circuit_breaker:
+  enabled: true
+  failure_threshold: 5
+  recovery_timeout: 30
+  half_open_max_calls: 3
+
+load_balancing:
+  strategies:
+    - "round_robin"
+    - "random"
+    - "least_connections"
+    - "weighted"
+    - "ip_hash"
+
+proxy:
+  timeout: 60
+  follow_redirects: true
+  preserve_host: false
+  
+cache:
+  enabled: true
+  ttl: 60
+  max_size: 1000
+  
+health_check:
+  enabled: true
+  interval: 30
+  timeout: 5
+  
+dependencies:
+  required:
+    - node: "00"
+      name: "StateMachine"
+      port: 8000
+  optional:
+    - node: "05"
+      name: "Auth"
+      port: 8005
+  
+metadata:
+  category: "infrastructure"
+  priority: "high"
+  author: "UFO Galaxy Team"
+  tags:
+    - "routing"
+    - "load-balancer"
+    - "proxy"
+    - "gateway"
