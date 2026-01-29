@@ -1,0 +1,91 @@
+# Node 58 - ModelRouter Configuration
+# UFO Galaxy v5.0 Core Node System
+
+node:
+  id: "58"
+  name: "ModelRouter"
+  description: "AI Model Routing for UFO Galaxy v5.0"
+  version: "5.0.0"
+  
+server:
+  host: "0.0.0.0"
+  port: 8558
+  workers: 4
+  reload: false
+  
+logging:
+  level: "INFO"
+  file: "model_router.log"
+  rotation: "10 MB"
+  retention: "7 days"
+  
+routing:
+  default_strategy: "capability_match"
+  strategies:
+    - "round_robin"
+    - "random"
+    - "least_latency"
+    - "least_cost"
+    - "capability_match"
+    - "priority"
+  fallback_enabled: true
+  retry_count: 2
+  timeout_seconds: 60
+
+models:
+  max_instances: 100
+  health_check_interval: 60
+  health_check_timeout: 10
+  auto_unregister_after_failures: 10
+
+performance:
+  tracking_enabled: true
+  metrics_window: 3600  # 1 hour
+  latency_threshold_ms: 5000
+  availability_threshold: 95.0
+
+cost:
+  tracking_enabled: true
+  budget_alerts: true
+  default_budget: 100.0
+
+load_balancing:
+  enabled: true
+  weights_enabled: true
+  circuit_breaker_enabled: true
+  circuit_breaker_threshold: 5
+  circuit_breaker_timeout: 30
+
+cache:
+  enabled: true
+  ttl: 300
+  max_size: 1000
+  
+health_check:
+  enabled: true
+  interval: 30
+  timeout: 5
+  
+dependencies:
+  required:
+    - node: "00"
+      name: "StateMachine"
+      port: 8000
+    - node: "01"
+      name: "OneAPI"
+      port: 8001
+  optional:
+    - node: "05"
+      name: "Auth"
+      port: 8005
+  
+metadata:
+  category: "ai"
+  priority: "high"
+  author: "UFO Galaxy Team"
+  tags:
+    - "ai"
+    - "routing"
+    - "load-balancer"
+    - "llm"
+    - "model-selection"
