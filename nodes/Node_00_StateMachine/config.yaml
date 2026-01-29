@@ -1,0 +1,44 @@
+# Node 00 - StateMachine Configuration
+# UFO Galaxy v5.0 Core Node System
+
+node:
+  id: "00"
+  name: "StateMachine"
+  description: "Central State Management for UFO Galaxy v5.0"
+  version: "5.0.0"
+  
+server:
+  host: "0.0.0.0"
+  port: 8000
+  workers: 1
+  reload: false
+  
+logging:
+  level: "INFO"
+  file: "state_machine.log"
+  rotation: "10 MB"
+  retention: "7 days"
+  
+state:
+  max_history: 1000
+  persistence_enabled: true
+  persistence_path: "./data/state"
+  auto_save_interval: 60
+  
+health_check:
+  enabled: true
+  interval: 30
+  timeout: 5
+  
+dependencies:
+  required: []
+  optional: []
+  
+metadata:
+  category: "core"
+  priority: "critical"
+  author: "UFO Galaxy Team"
+  tags:
+    - "state-management"
+    - "orchestration"
+    - "core"
