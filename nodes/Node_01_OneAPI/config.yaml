@@ -1,0 +1,80 @@
+# Node 01 - OneAPI Configuration
+# UFO Galaxy v5.0 Core Node System
+
+node:
+  id: "01"
+  name: "OneAPI"
+  description: "AI API Gateway for UFO Galaxy v5.0"
+  version: "5.0.0"
+  
+server:
+  host: "0.0.0.0"
+  port: 8001
+  workers: 4
+  reload: false
+  
+logging:
+  level: "INFO"
+  file: "oneapi_gateway.log"
+  rotation: "10 MB"
+  retention: "7 days"
+  
+ai_providers:
+  openai:
+    enabled: true
+    base_url: "https://api.openai.com/v1"
+    timeout: 60
+  anthropic:
+    enabled: true
+    base_url: "https://api.anthropic.com/v1"
+    timeout: 60
+  google:
+    enabled: true
+    base_url: "https://generativelanguage.googleapis.com/v1"
+    timeout: 60
+  cohere:
+    enabled: true
+    base_url: "https://api.cohere.com/v1"
+    timeout: 60
+  mistral:
+    enabled: true
+    base_url: "https://api.mistral.ai/v1"
+    timeout: 60
+  azure:
+    enabled: false
+    timeout: 60
+
+rate_limiting:
+  enabled: true
+  requests_per_minute: 60
+  burst_size: 10
+
+cache:
+  enabled: true
+  ttl: 300
+  max_size: 1000
+  
+health_check:
+  enabled: true
+  interval: 30
+  timeout: 5
+  
+dependencies:
+  required:
+    - node: "00"
+      name: "StateMachine"
+      port: 8000
+  optional:
+    - node: "03"
+      name: "Keystore"
+      port: 8003
+  
+metadata:
+  category: "ai"
+  priority: "critical"
+  author: "UFO Galaxy Team"
+  tags:
+    - "ai"
+    - "api-gateway"
+    - "llm"
+    - "openai"
