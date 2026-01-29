@@ -1,0 +1,92 @@
+# Node 33 - ADB Configuration
+# UFO Galaxy v5.0 Core Node System
+
+node:
+  id: "33"
+  name: "ADB"
+  description: "Android Debug Bridge for UFO Galaxy v5.0"
+  version: "5.0.0"
+  
+server:
+  host: "0.0.0.0"
+  port: 8433
+  workers: 2
+  reload: false
+  
+logging:
+  level: "INFO"
+  file: "adb.log"
+  rotation: "10 MB"
+  retention: "7 days"
+  
+adb:
+  binary_path: "adb"
+  default_port: 5555
+  connection_timeout: 10
+  command_timeout: 30
+  auto_connect: true
+  
+device_monitoring:
+  enabled: true
+  interval: 10
+  health_check_enabled: true
+  
+shell:
+  max_concurrent: 5
+  default_timeout: 30
+  allow_root: false
+  blocked_commands:
+    - "rm -rf /"
+    - "mkfs"
+    - "dd"
+
+file_transfer:
+  max_file_size: 104857600  # 100MB
+  allowed_extensions:
+    - ".txt"
+    - ".json"
+    - ".xml"
+    - ".png"
+    - ".jpg"
+    - ".apk"
+  
+screenshot:
+  enabled: true
+  format: "png"
+  quality: 90
+  max_dimension: 1920
+  
+logcat:
+  max_lines: 10000
+  default_buffer: "main"
+  buffers:
+    - "main"
+    - "system"
+    - "crash"
+    - "events"
+    - "radio"
+
+health_check:
+  enabled: true
+  interval: 30
+  timeout: 5
+  
+dependencies:
+  required:
+    - node: "00"
+      name: "StateMachine"
+      port: 8000
+  optional:
+    - node: "02"
+      name: "TaskEngine"
+      port: 8002
+  
+metadata:
+  category: "device"
+  priority: "medium"
+  author: "UFO Galaxy Team"
+  tags:
+    - "android"
+    - "adb"
+    - "device"
+    - "mobile"
