@@ -1,0 +1,62 @@
+# Node 02 - TaskEngine Configuration
+# UFO Galaxy v5.0 Core Node System
+
+node:
+  id: "02"
+  name: "TaskEngine"
+  description: "Task Execution Engine for UFO Galaxy v5.0"
+  version: "5.0.0"
+  
+server:
+  host: "0.0.0.0"
+  port: 8002
+  workers: 4
+  reload: false
+  
+logging:
+  level: "INFO"
+  file: "task_engine.log"
+  rotation: "10 MB"
+  retention: "7 days"
+  
+workers:
+  count: 5
+  max_concurrent: 10
+  queue_size: 1000
+
+tasks:
+  default_timeout: 300
+  max_retries: 3
+  retry_delay: 5
+  cleanup_interval: 3600
+  max_age_hours: 24
+  
+scheduling:
+  enabled: true
+  check_interval: 1
+  priority_levels: 5
+
+health_check:
+  enabled: true
+  interval: 30
+  timeout: 5
+  
+dependencies:
+  required:
+    - node: "00"
+      name: "StateMachine"
+      port: 8000
+  optional:
+    - node: "01"
+      name: "OneAPI"
+      port: 8001
+  
+metadata:
+  category: "core"
+  priority: "high"
+  author: "UFO Galaxy Team"
+  tags:
+    - "tasks"
+    - "execution"
+    - "queue"
+    - "scheduler"
