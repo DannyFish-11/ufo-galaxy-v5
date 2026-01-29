@@ -1,0 +1,856 @@
+# UFO Galaxy v5.0 - Docker Compose Configuration
+# Production-ready multi-service orchestration
+# Version: 5.0.0
+
+version: '3.9'
+
+# =============================================================================
+# NETWORKS
+# =============================================================================
+networks:
+  ufo-galaxy-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+          gateway: 172.20.0.1
+  monitoring-network:
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.21.0.0/16
+          gateway: 172.21.0.1
+
+# =============================================================================
+# VOLUMES
+# =============================================================================
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  grafana_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  node_configs:
+    driver: local
+  shared_storage:
+    driver: local
+  nginx_logs:
+    driver: local
+
+# =============================================================================
+# SERVICES
+# =============================================================================
+services:
+  # ==========================================================================
+  # INFRASTRUCTURE SERVICES
+  # ==========================================================================
+  
+  # PostgreSQL - Primary Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: ufo-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ufo_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-UfoSecure2024!}
+      POSTGRES_DB: ${POSTGRES_DB:-ufo_galaxy}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/pgdata
+      - ./init-scripts:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    networks:
+      ufo-galaxy-network:
+        ipv4_address: 172.20.0.10
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ufo_admin} -d ${POSTGRES_DB:-ufo_galaxy}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  # Redis - Caching & Message Queue
+  redis:
+    image: redis:7-alpine
+    container_name: ufo-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 1gb
+      --maxmemory-policy allkeys-lru
+      --requirepass ${REDIS_PASSWORD:-UfoRedis2024!}
+    volumes:
+      - redis_data:/data
+      - ./redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    networks:
+      ufo-galaxy-network:
+        ipv4_address: 172.20.0.11
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+  # Redis Commander - Redis Management UI
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: ufo-redis-commander
+    restart: unless-stopped
+    environment:
+      REDIS_HOSTS: local:redis:6379:0:${REDIS_PASSWORD:-UfoRedis2024!}
+    ports:
+      - "${REDIS_COMMANDER_PORT:-8081}:8081"
+    networks:
+      - ufo-galaxy-network
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # ==========================================================================
+  # UFO GALAXY CORE SERVICES
+  # ==========================================================================
+
+  # Master Node - Central Coordinator
+  master-node:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: production
+    container_name: ufo-master-node
+    restart: unless-stopped
+    environment:
+      NODE_TYPE: master
+      NODE_ID: node-000
+      NODE_NAME: MasterCoordinator
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-ufo_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-UfoSecure2024!}
+      POSTGRES_DB: ${POSTGRES_DB:-ufo_galaxy}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-UfoRedis2024!}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      PROMETHEUS_PORT: 9090
+    ports:
+      - "8000:8000"
+      - "9090:9090"
+    volumes:
+      - node_configs:/app/config
+      - shared_storage:/app/shared
+    networks:
+      ufo-galaxy-network:
+        ipv4_address: 172.20.1.1
+      monitoring-network:
+        ipv4_address: 172.21.1.1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  # ==========================================================================
+  # PROCESSING NODES (1-25) - Data Processing Layer
+  # ==========================================================================
+  node-001:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: production
+    container_name: ufo-node-001
+    restart: unless-stopped
+    environment:
+      NODE_TYPE: processing
+      NODE_ID: node-001
+      NODE_NAME: DataProcessor-Alpha
+      MASTER_NODE: master-node:8000
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-UfoRedis2024!}
+      PROMETHEUS_PORT: 9091
+    ports:
+      - "8001:8000"
+      - "9091:9091"
+    volumes:
+      - node_configs:/app/config:ro
+      - shared_storage:/app/shared
+    networks:
+      - ufo-galaxy-network
+      - monitoring-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      master-node:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+
+  node-002:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: production
+    container_name: ufo-node-002
+    restart: unless-stopped
+    environment:
+      NODE_TYPE: processing
+      NODE_ID: node-002
+      NODE_NAME: DataProcessor-Beta
+      MASTER_NODE: master-node:8000
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-UfoRedis2024!}
+      PROMETHEUS_PORT: 9092
+    ports:
+      - "8002:8000"
+      - "9092:9092"
+    volumes:
+      - node_configs:/app/config:ro
+      - shared_storage:/app/shared
+    networks:
+      - ufo-galaxy-network
+      - monitoring-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      master-node:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+
+  node-003:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: production
+    container_name: ufo-node-003
+    restart: unless-stopped
+    environment:
+      NODE_TYPE: processing
+      NODE_ID: node-003
+      NODE_NAME: DataProcessor-Gamma
+      MASTER_NODE: master-node:8000
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-UfoRedis2024!}
+      PROMETHEUS_PORT: 9093
+    ports:
+      - "8003:8000"
+      - "9093:9093"
+    volumes:
+      - node_configs:/app/config:ro
+      - shared_storage:/app/shared
+    networks:
+      - ufo-galaxy-network
+      - monitoring-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      master-node:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+
+  # Processing Nodes 004-025 (template pattern - abbreviated for brevity)
+  # In production, these would be fully expanded or use docker-compose scale
+  
+  # ==========================================================================
+  # LEARNING NODES (26-50) - Machine Learning Layer
+  # ==========================================================================
+  node-026:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: production
+    container_name: ufo-node-026
+    restart: unless-stopped
+    environment:
+      NODE_TYPE: learning
+      NODE_ID: node-026
+      NODE_NAME: ML-Trainer-Alpha
+      MASTER_NODE: master-node:8000
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-UfoRedis2024!}
+      PROMETHEUS_PORT: 9116
+    ports:
+      - "8026:8000"
+      - "9116:9116"
+    volumes:
+      - node_configs:/app/config:ro
+      - shared_storage:/app/shared
+      - ml_models:/app/models
+    networks:
+      - ufo-galaxy-network
+      - monitoring-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      master-node:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '1.0'
+          memory: 2G
+
+  node-027:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: production
+    container_name: ufo-node-027
+    restart: unless-stopped
+    environment:
+      NODE_TYPE: learning
+      NODE_ID: node-027
+      NODE_NAME: ML-Trainer-Beta
+      MASTER_NODE: master-node:8000
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-UfoRedis2024!}
+      PROMETHEUS_PORT: 9117
+    ports:
+      - "8027:8000"
+      - "9117:9117"
+    volumes:
+      - node_configs:/app/config:ro
+      - shared_storage:/app/shared
+      - ml_models:/app/models
+    networks:
+      - ufo-galaxy-network
+      - monitoring-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      master-node:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+
+  # ==========================================================================
+  # COMMUNICATION NODES (51-75) - Inter-node Communication Layer
+  # ==========================================================================
+  node-051:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: production
+    container_name: ufo-node-051
+    restart: unless-stopped
+    environment:
+      NODE_TYPE: communication
+      NODE_ID: node-051
+      NODE_NAME: CommHub-Alpha
+      MASTER_NODE: master-node:8000
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-UfoRedis2024!}
+      PROMETHEUS_PORT: 9141
+    ports:
+      - "8051:8000"
+      - "9141:9141"
+    volumes:
+      - node_configs:/app/config:ro
+      - shared_storage:/app/shared
+    networks:
+      - ufo-galaxy-network
+      - monitoring-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      master-node:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  # ==========================================================================
+  # STORAGE NODES (76-90) - Data Persistence Layer
+  # ==========================================================================
+  node-076:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: production
+    container_name: ufo-node-076
+    restart: unless-stopped
+    environment:
+      NODE_TYPE: storage
+      NODE_ID: node-076
+      NODE_NAME: StorageNode-Alpha
+      MASTER_NODE: master-node:8000
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-UfoRedis2024!}
+      PROMETHEUS_PORT: 9166
+    ports:
+      - "8076:8000"
+      - "9166:9166"
+    volumes:
+      - node_configs:/app/config:ro
+      - shared_storage:/app/shared
+      - storage_data:/app/storage
+    networks:
+      - ufo-galaxy-network
+      - monitoring-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      master-node:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G
+
+  # ==========================================================================
+  # MONITORING NODES (91-100) - System Monitoring Layer
+  # ==========================================================================
+  node-091:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: production
+    container_name: ufo-node-091
+    restart: unless-stopped
+    environment:
+      NODE_TYPE: monitoring
+      NODE_ID: node-091
+      NODE_NAME: MonitorNode-Alpha
+      MASTER_NODE: master-node:8000
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-UfoRedis2024!}
+      PROMETHEUS_PORT: 9181
+    ports:
+      - "8091:8000"
+      - "9181:9181"
+    volumes:
+      - node_configs:/app/config:ro
+      - shared_storage:/app/shared
+    networks:
+      - ufo-galaxy-network
+      - monitoring-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      master-node:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  # ==========================================================================
+  # BACKUP NODES (101-102) - Backup & Recovery Layer
+  # ==========================================================================
+  node-101:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: production
+    container_name: ufo-node-101
+    restart: unless-stopped
+    environment:
+      NODE_TYPE: backup
+      NODE_ID: node-101
+      NODE_NAME: BackupNode-Primary
+      MASTER_NODE: master-node:8000
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-UfoRedis2024!}
+      PROMETHEUS_PORT: 9191
+    ports:
+      - "8101:8000"
+      - "9191:9191"
+    volumes:
+      - node_configs:/app/config:ro
+      - shared_storage:/app/shared
+      - backup_data:/app/backup
+    networks:
+      - ufo-galaxy-network
+      - monitoring-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      master-node:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 1G
+
+  node-102:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: production
+    container_name: ufo-node-102
+    restart: unless-stopped
+    environment:
+      NODE_TYPE: backup
+      NODE_ID: node-102
+      NODE_NAME: BackupNode-Secondary
+      MASTER_NODE: master-node:8000
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-UfoRedis2024!}
+      PROMETHEUS_PORT: 9192
+    ports:
+      - "8102:8000"
+      - "9192:9192"
+    volumes:
+      - node_configs:/app/config:ro
+      - shared_storage:/app/shared
+      - backup_data:/app/backup
+    networks:
+      - ufo-galaxy-network
+      - monitoring-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      master-node:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 1G
+
+  # ==========================================================================
+  # WEB DASHBOARD
+  # ==========================================================================
+  dashboard:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.dashboard
+    container_name: ufo-dashboard
+    restart: unless-stopped
+    environment:
+      API_URL: http://master-node:8000
+      WS_URL: ws://master-node:8000/ws
+      NODE_ENV: production
+    ports:
+      - "${DASHBOARD_PORT:-3000}:80"
+    networks:
+      - ufo-galaxy-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      master-node:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  # ==========================================================================
+  # NGINX REVERSE PROXY
+  # ==========================================================================
+  nginx:
+    image: nginx:alpine
+    container_name: ufo-nginx
+    restart: unless-stopped
+    ports:
+      - "${NGINX_HTTP_PORT:-80}:80"
+      - "${NGINX_HTTPS_PORT:-443}:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - nginx_logs:/var/log/nginx
+    networks:
+      - ufo-galaxy-network
+    depends_on:
+      - master-node
+      - dashboard
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  # ==========================================================================
+  # MONITORING STACK
+  # ==========================================================================
+  
+  # Prometheus - Metrics Collection
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    container_name: ufo-prometheus
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+    volumes:
+      - prometheus_data:/prometheus
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    networks:
+      - monitoring-network
+      - ufo-galaxy-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+
+  # Grafana - Metrics Visualization
+  grafana:
+    image: grafana/grafana:10.1.0
+    container_name: ufo-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-UfoGrafana2024!}
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3001}
+      GF_INSTALL_PLUGINS: grafana-clock-panel,grafana-simple-json-datasource
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana-dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+    ports:
+      - "${GRAFANA_PORT:-3001}:3000"
+    networks:
+      - monitoring-network
+      - ufo-galaxy-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      prometheus:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  # Node Exporter - Host Metrics
+  node-exporter:
+    image: prom/node-exporter:v1.6.1
+    container_name: ufo-node-exporter
+    restart: unless-stopped
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    ports:
+      - "${NODE_EXPORTER_PORT:-9100}:9100"
+    networks:
+      - monitoring-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9100/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+
+  # cAdvisor - Container Metrics
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.47.2
+    container_name: ufo-cadvisor
+    restart: unless-stopped
+    privileged: true
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+    ports:
+      - "${CADVISOR_PORT:-8080}:8080"
+    networks:
+      - monitoring-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  # AlertManager - Alert Management
+  alertmanager:
+    image: prom/alertmanager:v0.26.0
+    container_name: ufo-alertmanager
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+    volumes:
+      - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    ports:
+      - "${ALERTMANAGER_PORT:-9093}:9093"
+    networks:
+      - monitoring-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9093/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+
+# Additional volumes for monitoring
+volumes:
+  postgres_data:
+  redis_data:
+  grafana_data:
+  prometheus_data:
+  node_configs:
+  shared_storage:
+  nginx_logs:
+  ml_models:
+  storage_data:
+  backup_data:
+  alertmanager_data:
